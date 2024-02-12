@@ -416,6 +416,11 @@ variable "cluster_resource_labels" {
   default     = {}
 }
 
+variable "enable_private_nodes" {
+  type        = bool
+  description = "(Beta) Whether nodes have internal IP addresses only"
+  default     = false
+}
 
 variable "dns_cache" {
   type        = bool

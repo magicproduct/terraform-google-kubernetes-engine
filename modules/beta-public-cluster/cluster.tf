@@ -433,6 +433,9 @@ resource "google_container_cluster" "primary" {
     }
   }
 
+  private_cluster_config {
+    enable_private_nodes = var.enable_private_nodes
+  }
 
   remove_default_node_pool = var.remove_default_node_pool
 
