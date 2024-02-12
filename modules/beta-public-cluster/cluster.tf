@@ -535,15 +535,10 @@ resource "google_container_node_pool" "pools" {
     }
   }
 
-  dynamic "network_config" {
-    for_each = length(lookup(each.value, "pod_range", "")) > 0 ? [each.value] : []
-    content {
-      pod_range            = lookup(network_config.value, "pod_range", null)
-      enable_private_nodes = lookup(network_config.value, "enable_private_nodes", null)
-    }
-  }
-
   network_config {
+    pod_range            = lookup(each.value, "pod_range", null)
+    enable_private_nodes = lookup(each.value, "enable_private_nodes", null)
+
     dynamic "additional_node_network_configs" {
       for_each = {for idx, x in lookup(var.node_pools_additional_networks, each.value["name"], []) : idx => x}
       iterator = additional_network
