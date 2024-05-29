@@ -49,6 +49,8 @@ locals {
   master_version_zonal    = var.kubernetes_version != "latest" ? var.kubernetes_version : data.google_container_engine_versions.zone.latest_master_version
   master_version          = var.regional ? local.master_version_regional : local.master_version_zonal
 
+  fleet_membership = var.fleet_project != null ? google_container_cluster.primary.fleet[0].membership : null
+
   release_channel    = var.release_channel != null ? [{ channel : var.release_channel }] : []
   gateway_api_config = var.gateway_api_channel != null ? [{ channel : var.gateway_api_channel }] : []
 
@@ -124,12 +126,12 @@ locals {
 
   # BETA features
   cluster_istio_enabled                = !local.cluster_output_istio_disabled
-  cluster_dns_cache_enabled            = var.dns_cache
   cluster_pod_security_policy_enabled  = local.cluster_output_pod_security_policy_enabled
   cluster_intranode_visibility_enabled = local.cluster_output_intranode_visbility_enabled
 
   # /BETA features
 
+  cluster_dns_cache_enabled               = var.dns_cache
   cluster_maintenance_window_is_recurring = var.maintenance_recurrence != "" && var.maintenance_end_time != "" ? [1] : []
   cluster_maintenance_window_is_daily     = length(local.cluster_maintenance_window_is_recurring) > 0 ? [] : [1]
 }

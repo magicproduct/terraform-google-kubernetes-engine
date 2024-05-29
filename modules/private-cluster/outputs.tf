@@ -184,3 +184,13 @@ output "peering_name" {
   description = "The name of the peering between this cluster and the Google owned VPC."
   value       = local.cluster_peering_name
 }
+
+output "dns_cache_enabled" {
+  description = "Whether DNS Cache enabled"
+  value       = local.cluster_dns_cache_enabled
+}
+
+output "fleet_membership" {
+  description = "Fleet membership (if registered)"
+  value       = local.fleet_membership
+}

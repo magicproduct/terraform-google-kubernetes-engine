@@ -126,7 +126,28 @@ resource "google_container_cluster" "primary" {
         disk_size = lookup(var.cluster_autoscaling, "disk_size", 100)
         disk_type = lookup(var.cluster_autoscaling, "disk_type", "pd-standard")
 
+        upgrade_settings {
+          strategy        = lookup(var.cluster_autoscaling, "strategy", "SURGE")
+          max_surge       = lookup(var.cluster_autoscaling, "strategy", "SURGE") == "SURGE" ? lookup(var.cluster_autoscaling, "max_surge", 0) : null
+          max_unavailable = lookup(var.cluster_autoscaling, "strategy", "SURGE") == "SURGE" ? lookup(var.cluster_autoscaling, "max_unavailable", 0) : null
+
+          dynamic "blue_green_settings" {
+            for_each = lookup(var.cluster_autoscaling, "strategy", "SURGE") == "BLUE_GREEN" ? [1] : []
+            content {
+              node_pool_soak_duration = lookup(var.cluster_autoscaling, "node_pool_soak_duration", null)
+
+              standard_rollout_policy {
+                batch_soak_duration = lookup(var.cluster_autoscaling, "batch_soak_duration", null)
+                batch_percentage    = lookup(var.cluster_autoscaling, "batch_percentage", null)
+                batch_node_count    = lookup(var.cluster_autoscaling, "batch_node_count", null)
+              }
+            }
+          }
+        }
+
         min_cpu_platform = lookup(var.node_pools[0], "min_cpu_platform", "")
+
+        image_type = lookup(var.cluster_autoscaling, "image_type", "COS_CONTAINERD")
       }
     }
     autoscaling_profile = var.cluster_autoscaling.autoscaling_profile != null ? var.cluster_autoscaling.autoscaling_profile : "BALANCED"
@@ -181,6 +202,15 @@ resource "google_container_cluster" "primary" {
           cidr_block   = lookup(cidr_blocks.value, "cidr_block", "")
           display_name = lookup(cidr_blocks.value, "display_name", "")
         }
+      }
+    }
+  }
+
+  dynamic "node_pool_auto_config" {
+    for_each = var.cluster_autoscaling.enabled && length(var.network_tags) > 0 ? [1] : []
+    content {
+      network_tags {
+        tags = var.network_tags
       }
     }
   }
@@ -243,6 +273,14 @@ resource "google_container_cluster" "primary" {
       }
     }
 
+    dynamic "stateful_ha_config" {
+      for_each = local.stateful_ha_config
+
+      content {
+        enabled = stateful_ha_config.value.enabled
+      }
+    }
+
     config_connector_config {
       enabled = var.config_connector
     }
@@ -283,6 +321,13 @@ resource "google_container_cluster" "primary" {
     vulnerability_mode = var.security_posture_vulnerability_mode
   }
 
+  dynamic "fleet" {
+    for_each = var.fleet_project != null ? [1] : []
+    content {
+      project = var.fleet_project
+    }
+  }
+
   ip_allocation_policy {
     cluster_secondary_range_name  = var.ip_range_pods
     services_secondary_range_name = var.ip_range_services
@@ -320,9 +365,7 @@ resource "google_container_cluster" "primary" {
         end_time       = maintenance_exclusion.value.end_time
 
         dynamic "exclusion_options" {
-          for_each = maintenance_exclusion.value.exclusion_scope == null ? [] : [
-            maintenance_exclusion.value.exclusion_scope
-          ]
+          for_each = maintenance_exclusion.value.exclusion_scope == null ? [] : [maintenance_exclusion.value.exclusion_scope]
           content {
             scope = exclusion_options.value
           }
@@ -380,9 +423,7 @@ resource "google_container_cluster" "primary" {
 
       tags = concat(
         lookup(local.node_pools_tags, "default_values", [true, true])[0] ? [local.cluster_network_tag] : [],
-        lookup(local.node_pools_tags, "default_values", [true, true])[1] ? [
-          "${local.cluster_network_tag}-default-pool"
-        ] : [],
+        lookup(local.node_pools_tags, "default_values", [true, true])[1] ? ["${local.cluster_network_tag}-default-pool"] : [],
         lookup(local.node_pools_tags, "all", []),
         lookup(local.node_pools_tags, var.node_pools[0].name, []),
       )
@@ -416,13 +457,11 @@ resource "google_container_cluster" "primary" {
   }
 
   dynamic "resource_usage_export_config" {
-    for_each = var.resource_usage_export_dataset_id != "" ? [
-      {
-        enable_network_egress_metering       = var.enable_network_egress_export
-        enable_resource_consumption_metering = var.enable_resource_consumption_export
-        dataset_id                           = var.resource_usage_export_dataset_id
-      }
-    ] : []
+    for_each = var.resource_usage_export_dataset_id != "" ? [{
+      enable_network_egress_metering       = var.enable_network_egress_export
+      enable_resource_consumption_metering = var.enable_resource_consumption_export
+      dataset_id                           = var.resource_usage_export_dataset_id
+    }] : []
 
     content {
       enable_network_egress_metering       = resource_usage_export_config.value.enable_network_egress_metering
@@ -485,16 +524,18 @@ resource "google_container_cluster" "primary" {
       }
     }
   }
+
+  depends_on = [google_project_iam_member.service_agent]
 }
 /******************************************
   Create Container Cluster node pools
  *****************************************/
 resource "google_container_node_pool" "pools" {
-  provider       = google-beta
-  for_each       = local.node_pools
-  name           = each.key
-  project        = var.project_id
-  location       = local.location
+  provider = google-beta
+  for_each = local.node_pools
+  name     = each.key
+  project  = var.project_id
+  location = local.location
   // use node_locations if provided, defaults to cluster level node_locations if not specified
   node_locations = lookup(each.value, "node_locations", "") != "" ? split(",", each.value["node_locations"]) : null
 
@@ -573,6 +614,13 @@ resource "google_container_node_pool" "pools" {
     }
   }
 
+  dynamic "queued_provisioning" {
+    for_each = lookup(each.value, "queued_provisioning", false) ? [true] : []
+    content {
+      enabled = lookup(each.value, "queued_provisioning", null)
+    }
+  }
+
   node_config {
     image_type       = lookup(each.value, "image_type", "COS_CONTAINERD")
     machine_type     = lookup(each.value, "machine_type", "e2-medium")
@@ -589,13 +637,15 @@ resource "google_container_node_pool" "pools" {
         enabled = gvnic.value
       }
     }
+    dynamic "reservation_affinity" {
+      for_each = lookup(each.value, "queued_provisioning", false) ? [true] : []
+      content {
+        consume_reservation_type = "NO_RESERVATION"
+      }
+    }
     labels = merge(
-      lookup(lookup(local.node_pools_labels, "default_values", {}), "cluster_name", true) ? {
-        "cluster_name" = var.name
-      } : {},
-      lookup(lookup(local.node_pools_labels, "default_values", {}), "node_pool", true) ? {
-        "node_pool" = each.value["name"]
-      } : {},
+      lookup(lookup(local.node_pools_labels, "default_values", {}), "cluster_name", true) ? { "cluster_name" = var.name } : {},
+      lookup(lookup(local.node_pools_labels, "default_values", {}), "node_pool", true) ? { "node_pool" = each.value["name"] } : {},
       local.node_pools_labels["all"],
       local.node_pools_labels[each.value["name"]],
     )
@@ -604,12 +654,8 @@ resource "google_container_node_pool" "pools" {
       local.node_pools_resource_labels[each.value["name"]],
     )
     metadata = merge(
-      lookup(lookup(local.node_pools_metadata, "default_values", {}), "cluster_name", true) ? {
-        "cluster_name" = var.name
-      } : {},
-      lookup(lookup(local.node_pools_metadata, "default_values", {}), "node_pool", true) ? {
-        "node_pool" = each.value["name"]
-      } : {},
+      lookup(lookup(local.node_pools_metadata, "default_values", {}), "cluster_name", true) ? { "cluster_name" = var.name } : {},
+      lookup(lookup(local.node_pools_metadata, "default_values", {}), "node_pool", true) ? { "node_pool" = each.value["name"] } : {},
       local.node_pools_metadata["all"],
       local.node_pools_metadata[each.value["name"]],
       {
@@ -629,9 +675,7 @@ resource "google_container_node_pool" "pools" {
     }
     tags = concat(
       lookup(local.node_pools_tags, "default_values", [true, true])[0] ? [local.cluster_network_tag] : [],
-      lookup(local.node_pools_tags, "default_values", [true, true])[1] ? [
-        "${local.cluster_network_tag}-${each.value["name"]}"
-      ] : [],
+      lookup(local.node_pools_tags, "default_values", [true, true])[1] ? ["${local.cluster_network_tag}-${each.value["name"]}"] : [],
       local.node_pools_tags["all"],
       local.node_pools_tags[each.value["name"]],
     )
@@ -642,10 +686,32 @@ resource "google_container_node_pool" "pools" {
     disk_size_gb    = lookup(each.value, "disk_size_gb", 100)
     disk_type       = lookup(each.value, "disk_type", "pd-standard")
 
+    dynamic "ephemeral_storage_local_ssd_config" {
+      for_each = lookup(each.value, "local_ssd_ephemeral_storage_count", 0) > 0 ? [each.value.local_ssd_ephemeral_storage_count] : []
+      content {
+        local_ssd_count = ephemeral_storage_local_ssd_config.value
+      }
+    }
     dynamic "ephemeral_storage_config" {
       for_each = lookup(each.value, "local_ssd_ephemeral_count", 0) > 0 ? [each.value.local_ssd_ephemeral_count] : []
       content {
         local_ssd_count = ephemeral_storage_config.value
+      }
+    }
+
+    dynamic "local_nvme_ssd_block_config" {
+      for_each = lookup(each.value, "local_nvme_ssd_count", 0) > 0 ? [each.value.local_nvme_ssd_count] : []
+      content {
+        local_ssd_count = local_nvme_ssd_block_config.value
+      }
+    }
+
+    # Supports a single secondary boot disk because `map(any)` must have the same values type.
+    dynamic "secondary_boot_disks" {
+      for_each = lookup(each.value, "secondary_boot_disk", "") != "" ? [each.value.secondary_boot_disk] : []
+      content {
+        disk_image = secondary_boot_disks.value
+        mode       = "CONTAINER_IMAGE_CACHE"
       }
     }
 
@@ -684,6 +750,21 @@ resource "google_container_node_pool" "pools" {
             gpu_driver_version = lookup(each.value, "gpu_driver_version", "")
           }
         }
+
+        dynamic "gpu_sharing_config" {
+          for_each = lookup(each.value, "gpu_sharing_strategy", "") != "" ? [1] : []
+          content {
+            gpu_sharing_strategy       = lookup(each.value, "gpu_sharing_strategy", "")
+            max_shared_clients_per_gpu = lookup(each.value, "max_shared_clients_per_gpu", 2)
+          }
+        }
+      }
+    }
+
+    dynamic "advanced_machine_features" {
+      for_each = lookup(each.value, "threads_per_core", 0) > 0 ? [1] : []
+      content {
+        threads_per_core = lookup(each.value, "threads_per_core", 0)
       }
     }
 
@@ -750,11 +831,11 @@ resource "google_container_node_pool" "pools" {
 
 }
 resource "google_container_node_pool" "windows_pools" {
-  provider       = google-beta
-  for_each       = local.windows_node_pools
-  name           = each.key
-  project        = var.project_id
-  location       = local.location
+  provider = google-beta
+  for_each = local.windows_node_pools
+  name     = each.key
+  project  = var.project_id
+  location = local.location
   // use node_locations if provided, defaults to cluster level node_locations if not specified
   node_locations = lookup(each.value, "node_locations", "") != "" ? split(",", each.value["node_locations"]) : null
 
@@ -826,6 +907,13 @@ resource "google_container_node_pool" "windows_pools" {
     }
   }
 
+  dynamic "queued_provisioning" {
+    for_each = lookup(each.value, "queued_provisioning", false) ? [true] : []
+    content {
+      enabled = lookup(each.value, "queued_provisioning", null)
+    }
+  }
+
   node_config {
     image_type       = lookup(each.value, "image_type", "COS_CONTAINERD")
     machine_type     = lookup(each.value, "machine_type", "e2-medium")
@@ -842,13 +930,15 @@ resource "google_container_node_pool" "windows_pools" {
         enabled = gvnic.value
       }
     }
+    dynamic "reservation_affinity" {
+      for_each = lookup(each.value, "queued_provisioning", false) ? [true] : []
+      content {
+        consume_reservation_type = "NO_RESERVATION"
+      }
+    }
     labels = merge(
-      lookup(lookup(local.node_pools_labels, "default_values", {}), "cluster_name", true) ? {
-        "cluster_name" = var.name
-      } : {},
-      lookup(lookup(local.node_pools_labels, "default_values", {}), "node_pool", true) ? {
-        "node_pool" = each.value["name"]
-      } : {},
+      lookup(lookup(local.node_pools_labels, "default_values", {}), "cluster_name", true) ? { "cluster_name" = var.name } : {},
+      lookup(lookup(local.node_pools_labels, "default_values", {}), "node_pool", true) ? { "node_pool" = each.value["name"] } : {},
       local.node_pools_labels["all"],
       local.node_pools_labels[each.value["name"]],
     )
@@ -857,12 +947,8 @@ resource "google_container_node_pool" "windows_pools" {
       local.node_pools_resource_labels[each.value["name"]],
     )
     metadata = merge(
-      lookup(lookup(local.node_pools_metadata, "default_values", {}), "cluster_name", true) ? {
-        "cluster_name" = var.name
-      } : {},
-      lookup(lookup(local.node_pools_metadata, "default_values", {}), "node_pool", true) ? {
-        "node_pool" = each.value["name"]
-      } : {},
+      lookup(lookup(local.node_pools_metadata, "default_values", {}), "cluster_name", true) ? { "cluster_name" = var.name } : {},
+      lookup(lookup(local.node_pools_metadata, "default_values", {}), "node_pool", true) ? { "node_pool" = each.value["name"] } : {},
       local.node_pools_metadata["all"],
       local.node_pools_metadata[each.value["name"]],
       {
@@ -882,9 +968,7 @@ resource "google_container_node_pool" "windows_pools" {
     }
     tags = concat(
       lookup(local.node_pools_tags, "default_values", [true, true])[0] ? [local.cluster_network_tag] : [],
-      lookup(local.node_pools_tags, "default_values", [true, true])[1] ? [
-        "${local.cluster_network_tag}-${each.value["name"]}"
-      ] : [],
+      lookup(local.node_pools_tags, "default_values", [true, true])[1] ? ["${local.cluster_network_tag}-${each.value["name"]}"] : [],
       local.node_pools_tags["all"],
       local.node_pools_tags[each.value["name"]],
     )
@@ -895,10 +979,32 @@ resource "google_container_node_pool" "windows_pools" {
     disk_size_gb    = lookup(each.value, "disk_size_gb", 100)
     disk_type       = lookup(each.value, "disk_type", "pd-standard")
 
+    dynamic "ephemeral_storage_local_ssd_config" {
+      for_each = lookup(each.value, "local_ssd_ephemeral_storage_count", 0) > 0 ? [each.value.local_ssd_ephemeral_storage_count] : []
+      content {
+        local_ssd_count = ephemeral_storage_local_ssd_config.value
+      }
+    }
     dynamic "ephemeral_storage_config" {
       for_each = lookup(each.value, "local_ssd_ephemeral_count", 0) > 0 ? [each.value.local_ssd_ephemeral_count] : []
       content {
         local_ssd_count = ephemeral_storage_config.value
+      }
+    }
+
+    dynamic "local_nvme_ssd_block_config" {
+      for_each = lookup(each.value, "local_nvme_ssd_count", 0) > 0 ? [each.value.local_nvme_ssd_count] : []
+      content {
+        local_ssd_count = local_nvme_ssd_block_config.value
+      }
+    }
+
+    # Supports a single secondary boot disk because `map(any)` must have the same values type.
+    dynamic "secondary_boot_disks" {
+      for_each = lookup(each.value, "secondary_boot_disk", "") != "" ? [each.value.secondary_boot_disk] : []
+      content {
+        disk_image = secondary_boot_disks.value
+        mode       = "CONTAINER_IMAGE_CACHE"
       }
     }
 
@@ -928,6 +1034,21 @@ resource "google_container_node_pool" "windows_pools" {
             gpu_driver_version = lookup(each.value, "gpu_driver_version", "")
           }
         }
+
+        dynamic "gpu_sharing_config" {
+          for_each = lookup(each.value, "gpu_sharing_strategy", "") != "" ? [1] : []
+          content {
+            gpu_sharing_strategy       = lookup(each.value, "gpu_sharing_strategy", "")
+            max_shared_clients_per_gpu = lookup(each.value, "max_shared_clients_per_gpu", 2)
+          }
+        }
+      }
+    }
+
+    dynamic "advanced_machine_features" {
+      for_each = lookup(each.value, "threads_per_core", 0) > 0 ? [1] : []
+      content {
+        threads_per_core = lookup(each.value, "threads_per_core", 0)
       }
     }
 

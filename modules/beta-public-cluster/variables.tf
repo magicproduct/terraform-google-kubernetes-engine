@@ -253,17 +253,25 @@ variable "enable_resource_consumption_export" {
 
 variable "cluster_autoscaling" {
   type = object({
-    enabled             = bool
-    autoscaling_profile = string
-    min_cpu_cores       = number
-    max_cpu_cores       = number
-    min_memory_gb       = number
-    max_memory_gb       = number
-    gpu_resources       = list(object({ resource_type = string, minimum = number, maximum = number }))
-    auto_repair         = bool
-    auto_upgrade        = bool
-    disk_size           = optional(number)
-    disk_type           = optional(string)
+    enabled                 = bool
+    autoscaling_profile     = string
+    min_cpu_cores           = number
+    max_cpu_cores           = number
+    min_memory_gb           = number
+    max_memory_gb           = number
+    gpu_resources           = list(object({ resource_type = string, minimum = number, maximum = number }))
+    auto_repair             = bool
+    auto_upgrade            = bool
+    disk_size               = optional(number)
+    disk_type               = optional(string)
+    image_type              = optional(string)
+    strategy                = optional(string)
+    max_surge               = optional(number)
+    max_unavailable         = optional(number)
+    node_pool_soak_duration = optional(string)
+    batch_soak_duration     = optional(string)
+    batch_percentage        = optional(number)
+    batch_node_count        = optional(number)
   })
   default = {
     enabled             = false
@@ -277,6 +285,7 @@ variable "cluster_autoscaling" {
     auto_upgrade        = true
     disk_size           = 100
     disk_type           = "pd-standard"
+    image_type          = "COS_CONTAINERD"
   }
   description = "Cluster autoscaling configuration. See [more details](https://cloud.google.com/kubernetes-engine/docs/reference/rest/v1beta1/projects.locations.clusters#clusterautoscaling)"
 }
@@ -312,6 +321,12 @@ variable "node_pools_oauth_scopes" {
     all               = ["https://www.googleapis.com/auth/cloud-platform"]
     default-node-pool = []
   }
+}
+
+variable "network_tags" {
+  description = "(Optional) - List of network tags applied to auto-provisioned node pools."
+  type        = list(string)
+  default     = []
 }
 
 variable "stub_domains" {
@@ -503,7 +518,7 @@ variable "shadow_firewall_rules_log_config" {
     metadata = string
   })
   description = "The log_config for shadow firewall rules. You can set this variable to `null` to disable logging."
-  default     = {
+  default = {
     metadata = "INCLUDE_ALL_METADATA"
   }
 }
@@ -539,7 +554,7 @@ variable "security_posture_mode" {
 }
 
 variable "security_posture_vulnerability_mode" {
-  description = "Security posture vulnerability mode.  Accepted values are `VULNERABILITY_DISABLED` and `VULNERABILITY_BASIC`. Defaults to `VULNERABILITY_DISABLED`."
+  description = "Security posture vulnerability mode.  Accepted values are `VULNERABILITY_DISABLED`, `VULNERABILITY_BASIC`, and `VULNERABILITY_ENTERPRISE`. Defaults to `VULNERABILITY_DISABLED`."
   type        = string
   default     = "VULNERABILITY_DISABLED"
 }
@@ -614,12 +629,10 @@ variable "database_encryption" {
   description = "Application-layer Secrets Encryption settings. The object format is {state = string, key_name = string}. Valid values of state are: \"ENCRYPTED\"; \"DECRYPTED\". key_name is the name of a CloudKMS key."
   type        = list(object({ state = string, key_name = string }))
 
-  default = [
-    {
-      state    = "DECRYPTED"
-      key_name = ""
-    }
-  ]
+  default = [{
+    state    = "DECRYPTED"
+    key_name = ""
+  }]
 }
 
 variable "enable_shielded_nodes" {
@@ -640,9 +653,7 @@ variable "node_metadata" {
   type        = string
 
   validation {
-    condition = contains([
-      "GKE_METADATA", "GCE_METADATA", "UNSPECIFIED", "GKE_METADATA_SERVER", "EXPOSE"
-    ], var.node_metadata)
+    condition     = contains(["GKE_METADATA", "GCE_METADATA", "UNSPECIFIED", "GKE_METADATA_SERVER", "EXPOSE"], var.node_metadata)
     error_message = "The node_metadata value must be one of GKE_METADATA, GCE_METADATA, UNSPECIFIED, GKE_METADATA_SERVER or EXPOSE."
   }
 }
@@ -683,6 +694,12 @@ variable "gcs_fuse_csi_driver" {
   default     = false
 }
 
+variable "stateful_ha" {
+  type        = bool
+  description = "Whether the Stateful HA Addon is enabled for this cluster."
+  default     = false
+}
+
 variable "timeouts" {
   type        = map(string)
   description = "Timeout for cluster operations."
@@ -717,7 +734,7 @@ variable "monitoring_observability_metrics_relay_mode" {
 
 variable "monitoring_enabled_components" {
   type        = list(string)
-  description = "List of services to monitor: SYSTEM_COMPONENTS, WORKLOADS (provider version >= 3.89.0). Empty list is default GKE configuration."
+  description = "List of services to monitor: SYSTEM_COMPONENTS, WORKLOADS. Empty list is default GKE configuration."
   default     = []
 }
 
@@ -736,6 +753,12 @@ variable "enable_kubernetes_alpha" {
 variable "config_connector" {
   type        = bool
   description = "Whether ConfigConnector is enabled for this cluster."
+  default     = false
+}
+
+variable "enable_l4_ilb_subsetting" {
+  type        = bool
+  description = "Enable L4 ILB Subsetting on the cluster"
   default     = false
 }
 
@@ -775,12 +798,6 @@ variable "enable_pod_security_policy" {
   default     = false
 }
 
-variable "enable_l4_ilb_subsetting" {
-  type        = bool
-  description = "Enable L4 ILB Subsetting on the cluster"
-  default     = false
-}
-
 variable "sandbox_enabled" {
   type        = bool
   description = "(Beta) Enable GKE Sandbox (Do not forget to set `image_type` = `COS_CONTAINERD` to use it)."
@@ -802,6 +819,18 @@ variable "enable_identity_service" {
 variable "enable_gcfs" {
   type        = bool
   description = "Enable image streaming on cluster level."
+  default     = false
+}
+
+variable "fleet_project" {
+  description = "(Optional) Register the cluster with the fleet in this project."
+  type        = string
+  default     = null
+}
+
+variable "fleet_project_grant_service_agent" {
+  description = "(Optional) Grant the fleet project service identity the `roles/gkehub.serviceAgent` and `roles/gkehub.crossProjectServiceAgent` roles."
+  type        = bool
   default     = false
 }
 

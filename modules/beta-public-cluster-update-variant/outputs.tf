@@ -175,6 +175,11 @@ output "mesh_certificates_config" {
 }
 
 
+output "dns_cache_enabled" {
+  description = "Whether DNS Cache enabled"
+  value       = local.cluster_dns_cache_enabled
+}
+
 output "cloudrun_enabled" {
   description = "Whether CloudRun enabled"
   value       = local.cluster_cloudrun_enabled
@@ -183,11 +188,6 @@ output "cloudrun_enabled" {
 output "istio_enabled" {
   description = "Whether Istio is enabled"
   value       = local.cluster_istio_enabled
-}
-
-output "dns_cache_enabled" {
-  description = "Whether DNS Cache enabled"
-  value       = local.cluster_dns_cache_enabled
 }
 
 output "pod_security_policy_enabled" {
@@ -203,4 +203,9 @@ output "intranode_visibility_enabled" {
 output "identity_service_enabled" {
   description = "Whether Identity Service is enabled"
   value       = local.cluster_pod_security_policy_enabled
+}
+
+output "fleet_membership" {
+  description = "Fleet membership (if registered)"
+  value       = local.fleet_membership
 }
