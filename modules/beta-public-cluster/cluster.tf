@@ -581,7 +581,7 @@ resource "google_container_node_pool" "pools" {
     enable_private_nodes = lookup(each.value, "enable_private_nodes", null)
 
     dynamic "additional_node_network_configs" {
-      for_each = {for idx, x in lookup(var.node_pools_additional_networks, each.value["name"], []) : idx => x}
+      for_each = { for idx, x in lookup(var.node_pools_additional_networks, each.value["name"], []) : idx => x }
       iterator = additional_network
       content {
         network    = additional_network.value.network_name
