@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Extending the adopted spec, each change should have a link to its corresponding pull request appended.
 
+## [44.3.0](https://github.com/terraform-google-modules/terraform-google-kubernetes-engine/compare/v44.2.0...v44.3.0) (2026-05-22)
+
+
+### Features
+
+* expose dns_enable_k8s_tokens_via_dns for GKE DNS endpoint ([#2587](https://github.com/terraform-google-modules/terraform-google-kubernetes-engine/issues/2587)) ([59dbfdc](https://github.com/terraform-google-modules/terraform-google-kubernetes-engine/commit/59dbfdcb5255c11e68c064b1af486beea4d4b62f))
+
+
+### Bug Fixes
+
+* avoid empty security_posture_config block ([#2593](https://github.com/terraform-google-modules/terraform-google-kubernetes-engine/issues/2593)) ([6997f1c](https://github.com/terraform-google-modules/terraform-google-kubernetes-engine/commit/6997f1cd677c49dac1b750736e6218bd49ff5ade))
+* avoid master_global_access_config drift when private endpoint is disabled ([#2591](https://github.com/terraform-google-modules/terraform-google-kubernetes-engine/issues/2591)) ([94bdc6a](https://github.com/terraform-google-modules/terraform-google-kubernetes-engine/commit/94bdc6a2e5529432bfebd3051cf660789ebeff5a))
+* Replace deprecated kubernetes_service_account with kubernetes_service_account_v1 ([#2560](https://github.com/terraform-google-modules/terraform-google-kubernetes-engine/issues/2560)) ([9feedce](https://github.com/terraform-google-modules/terraform-google-kubernetes-engine/commit/9feedcedc0afc98d97dc3b431f61fa5e32956443))
+
 ## [44.2.0](https://github.com/terraform-google-modules/terraform-google-kubernetes-engine/compare/v44.1.0...v44.2.0) (2026-05-15)
 
 
