@@ -62,7 +62,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Setup node
-        uses: chainguard-actions/actions-setup-node@5220cca6dfc39e236be6378db71ac72a660ed75b # v6.3.0
+        uses: chainguard-actions/actions-setup-node@b8eacff6f5f2bed938e75d245e141bc3585415da # v6.4.0
         with:
           node-version: lts/*
       - name: Install commitlint
