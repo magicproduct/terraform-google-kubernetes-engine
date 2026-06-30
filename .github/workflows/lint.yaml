@@ -35,7 +35,7 @@ jobs:
     name: 'lint'
     runs-on: 'ubuntu-latest'
     steps:
-      - uses: 'actions/checkout@v6'
+      - uses: 'chainguard-actions/actions-checkout@84880c833d491e2b948e484ac6a8ce9da42795dc' # v6
       - id: variables
         run: |
           MAKEFILE=$(find . -name Makefile -print -quit)
@@ -58,11 +58,11 @@ jobs:
   commitlint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: chainguard-actions/actions-checkout@84880c833d491e2b948e484ac6a8ce9da42795dc # v6
         with:
           fetch-depth: 0
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: chainguard-actions/actions-setup-node@b8eacff6f5f2bed938e75d245e141bc3585415da # v6.4.0
         with:
           node-version: lts/*
       - name: Install commitlint
